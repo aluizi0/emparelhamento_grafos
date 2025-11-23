@@ -4,6 +4,7 @@ import copy
 import matplotlib.pyplot as plt
 import networkx as nx
 import pandas as pd
+import numpy as np
 
 # --- Estruturas de Dados ---
 class Projeto:
@@ -104,6 +105,7 @@ def executar_gale_shapley(projetos, alunos):
             
         # 2. Cheio -> Competição por Nota
         else:
+            # Ordena por nota (crescente). O primeiro é o menor nota.
             projeto.alunos_alocados.sort(key=lambda x: x.nota)
             pior_atual = projeto.alunos_alocados[0]
 
@@ -112,7 +114,7 @@ def executar_gale_shapley(projetos, alunos):
                 projeto.alunos_alocados.pop(0)
                 pior_atual.projeto_alocado = None
                 
-                # Remove conexão antiga do estado
+                # Remove conexão antiga do estado visual
                 if (pior_atual.codigo, p_code) in estado_conexoes:
                     del estado_conexoes[(pior_atual.codigo, p_code)]
                 
@@ -132,70 +134,102 @@ def executar_gale_shapley(projetos, alunos):
 
     return snapshots
 
-# --- Visualização ---
+# --- Visualização Radial (Circular) ---
 def gerar_visualizacoes(projetos, alunos, snapshots):
     if not os.path.exists('graficos'):
         os.makedirs('graficos')
 
-    # 1. Gerar Snapshots (Vamos pegar 10 momentos distribuídos)
-    total_snaps = len(snapshots)
-    indices_para_plotar = [int(i * total_snaps / 9) for i in range(10)] # 10 índices
-    indices_para_plotar[-1] = total_snaps - 1 # Garante o último
-    
-    # Layout do Grafo Bipartido
+    print("Gerando visualizações com layout Radial (Circular)...")
+
+    # --- Configuração do Layout Radial ---
     G = nx.Graph()
-    top_nodes = list(alunos.keys())
-    bottom_nodes = list(projetos.keys())
-    G.add_nodes_from(top_nodes, bipartite=0)
-    G.add_nodes_from(bottom_nodes, bipartite=1)
-    
-    # Posicionamento fixo para não pular na tela
+    lista_alunos = list(alunos.keys())
+    lista_projetos = list(projetos.keys())
+    G.add_nodes_from(lista_alunos)
+    G.add_nodes_from(lista_projetos)
+
     pos = {}
-    for i, node in enumerate(top_nodes):
-        pos[node] = (i * 2, 1) # Alunos em cima
-    for i, node in enumerate(bottom_nodes):
-        pos[node] = (i * 8, 0) # Projetos embaixo (mais espaçados pois são menos)
+    
+    # Círculo de Projetos (Interno - Raio 10)
+    raio_proj = 10
+    for i, p in enumerate(lista_projetos):
+        angulo = (2 * np.pi * i) / len(lista_projetos)
+        pos[p] = (raio_proj * np.cos(angulo), raio_proj * np.sin(angulo))
+        
+    # Círculo de Alunos (Externo - Raio 25)
+    raio_aluno = 25
+    for i, a in enumerate(lista_alunos):
+        angulo = (2 * np.pi * i) / len(lista_alunos)
+        pos[a] = (raio_aluno * np.cos(angulo), raio_aluno * np.sin(angulo))
 
-    print("Gerando imagens dos snapshots...")
-    for idx, i in enumerate(indices_para_plotar):
-        snap = snapshots[i]
+    # --- Seleção de Snapshots ---
+    # Pega o primeiro, o último e mais 8 distribuídos no meio
+    total_snaps = len(snapshots)
+    indices = np.linspace(0, total_snaps - 1, 10, dtype=int)
+
+    for idx_img, idx_snap in enumerate(indices):
+        snap = snapshots[idx_snap]
         
-        plt.figure(figsize=(20, 10))
-        plt.title(f"Iteração {snap['iteracao']}: Aluno {snap['aluno']} -> Projeto {snap['projeto']} ({snap['resultado'].upper()})")
+        plt.figure(figsize=(15, 15))
         
-        # Desenha nós
-        nx.draw_networkx_nodes(G, pos, nodelist=top_nodes, node_color='skyblue', node_size=300, label='Alunos')
-        nx.draw_networkx_nodes(G, pos, nodelist=bottom_nodes, node_color='lightgreen', node_size=500, node_shape='s', label='Projetos')
+        # Título Informativo
+        acao_txt = "ACEITO" if snap['resultado'] == 'aceito' else "REJEITADO"
+        cor_titulo = 'green' if snap['resultado'] == 'aceito' else 'red'
+        plt.suptitle(f"Iteração {snap['iteracao']}: {snap['aluno']} tenta {snap['projeto']} -> {acao_txt}", 
+                     fontsize=16, color=cor_titulo, fontweight='bold')
         
-        # Arestas Estáveis (Já aceitas)
+        # 1. Desenha Nós
+        # Alunos (Azul claro)
+        nx.draw_networkx_nodes(G, pos, nodelist=lista_alunos, node_size=50, node_color='#87CEFA', label='Alunos')
+        # Projetos (Verde claro)
+        nx.draw_networkx_nodes(G, pos, nodelist=lista_projetos, node_size=300, node_color='#90EE90', label='Projetos')
+        
+        # Labels apenas nos Projetos
+        nx.draw_networkx_labels(G, pos, labels={p: p for p in lista_projetos}, font_size=8, font_weight='bold')
+        
+        # 2. Desenha Arestas (Emparelhamentos Estáveis) - COR VERDE
         conexoes = snap['conexoes_final']
-        edges_aceitas = [edge for edge in conexoes.keys()]
-        nx.draw_networkx_edges(G, pos, edgelist=edges_aceitas, edge_color='green', width=2)
+        edges_verdes = list(conexoes.keys())
         
-        # Aresta da Ação Atual (destaque)
-        cor_acao = 'blue' if snap['resultado'] == 'aceito' else 'red'
-        estilo = 'solid' if snap['resultado'] == 'aceito' else 'dashed'
-        nx.draw_networkx_edges(G, pos, edgelist=[(snap['aluno'], snap['projeto'])], edge_color=cor_acao, width=3, style=estilo)
+        # Remove a aresta atual da lista de verdes para desenhá-la com destaque depois (se ela foi aceita)
+        aresta_atual = (snap['aluno'], snap['projeto'])
+        if aresta_atual in edges_verdes and snap['resultado'] == 'aceito':
+            edges_verdes.remove(aresta_atual)
+            
+        nx.draw_networkx_edges(G, pos, edgelist=edges_verdes, edge_color='green', alpha=0.3, width=1)
+        
+        # 3. Desenha Ação Atual
+        if snap['resultado'] == 'aceito':
+            # Proposta Aceita (Azul forte)
+            nx.draw_networkx_edges(G, pos, edgelist=[aresta_atual], edge_color='blue', width=3)
+        else:
+            # Proposta Rejeitada (Vermelho tracejado)
+            nx.draw_networkx_edges(G, pos, edgelist=[aresta_atual], edge_color='red', width=3, style='dashed')
 
-        # Labels (apenas alguns para não poluir se for muito grande)
-        # Se for muito denso, pode comentar isso
-        # nx.draw_networkx_labels(G, pos, font_size=8)
-
-        plt.legend(['Alunos', 'Projetos'])
+        # Legenda Personalizada
+        from matplotlib.lines import Line2D
+        legend_elements = [
+            Line2D([0], [0], color='green', lw=2, label='Emparelhado (Estável)'),
+            Line2D([0], [0], color='blue', lw=2, label='Proposta Aceita (Ativa)'),
+            Line2D([0], [0], color='red', lw=2, linestyle='--', label='Proposta Rejeitada'),
+            Line2D([0], [0], marker='o', color='w', markerfacecolor='#87CEFA', markersize=10, label='Alunos (Externo)'),
+            Line2D([0], [0], marker='o', color='w', markerfacecolor='#90EE90', markersize=10, label='Projetos (Interno)')
+        ]
+        plt.legend(handles=legend_elements, loc='upper right')
+        
         plt.axis('off')
-        plt.savefig(f"graficos/snapshot_{idx+1}.png")
+        plt.savefig(f"graficos/snapshot_{idx_img+1}.png")
         plt.close()
 
-    print("Snapshots salvos na pasta 'graficos'.")
-
-    # 2. Matriz de Satisfação e Tabela Final
+    print("Snapshots radiais salvos na pasta 'graficos'.")
+    
+    # --- 2. Matriz de Satisfação e Tabela Final ---
     dados_finais = []
     rank_satisfacao = {'1ª Opção': 0, '2ª Opção': 0, '3ª Opção': 0, 'Não Alocado': 0}
 
     for a in alunos.values():
         if a.projeto_alocado:
             proj = a.projeto_alocado
-            # Em qual posição da lista ORIGINAL estava esse projeto?
             try:
                 rank = a.preferencias_originais.index(proj.codigo) + 1
                 rank_str = f"{rank}ª"
@@ -203,7 +237,7 @@ def gerar_visualizacoes(projetos, alunos, snapshots):
                 elif rank == 2: rank_satisfacao['2ª Opção'] += 1
                 elif rank == 3: rank_satisfacao['3ª Opção'] += 1
             except ValueError:
-                rank_str = "N/A" # Não deveria acontecer se a lógica estiver certa
+                rank_str = "N/A"
             
             dados_finais.append([a.codigo, proj.codigo, a.nota, rank_str])
         else:
@@ -213,7 +247,7 @@ def gerar_visualizacoes(projetos, alunos, snapshots):
     df_final = pd.DataFrame(dados_finais, columns=['Aluno', 'Projeto', 'Nota Aluno', 'Rank Escolha'])
     df_final.to_excel("graficos/resultado_final.xlsx", index=False)
     
-    # 3. Gráfico de Satisfação
+    # --- 3. Gráfico de Satisfação ---
     plt.figure(figsize=(8, 6))
     plt.bar(rank_satisfacao.keys(), rank_satisfacao.values(), color=['gold', 'silver', 'brown', 'gray'])
     plt.title("Índice de Satisfação dos Alunos")
