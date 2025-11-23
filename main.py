@@ -163,14 +163,14 @@ def gerar_visualizacoes(projetos, alunos, snapshots):
         pos[a] = (raio_aluno * np.cos(angulo), raio_aluno * np.sin(angulo))
 
     # --- Seleção de Snapshots ---
-    # Pega o primeiro, o último e mais 8 distribuídos no meio
     total_snaps = len(snapshots)
     indices = np.linspace(0, total_snaps - 1, 10, dtype=int)
 
     for idx_img, idx_snap in enumerate(indices):
         snap = snapshots[idx_snap]
         
-        plt.figure(figsize=(15, 15))
+        # Aumentei um pouco a figura para caber os nomes
+        plt.figure(figsize=(18, 18)) 
         
         # Título Informativo
         acao_txt = "ACEITO" if snap['resultado'] == 'aceito' else "REJEITADO"
@@ -179,19 +179,23 @@ def gerar_visualizacoes(projetos, alunos, snapshots):
                      fontsize=16, color=cor_titulo, fontweight='bold')
         
         # 1. Desenha Nós
-        # Alunos (Azul claro)
-        nx.draw_networkx_nodes(G, pos, nodelist=lista_alunos, node_size=50, node_color='#87CEFA', label='Alunos')
+        # Alunos (Azul claro) - Aumentei um pouco o node_size para caber o texto
+        nx.draw_networkx_nodes(G, pos, nodelist=lista_alunos, node_size=150, node_color='#87CEFA', label='Alunos')
         # Projetos (Verde claro)
-        nx.draw_networkx_nodes(G, pos, nodelist=lista_projetos, node_size=300, node_color='#90EE90', label='Projetos')
+        nx.draw_networkx_nodes(G, pos, nodelist=lista_projetos, node_size=400, node_color='#90EE90', label='Projetos')
         
-        # Labels apenas nos Projetos
-        nx.draw_networkx_labels(G, pos, labels={p: p for p in lista_projetos}, font_size=8, font_weight='bold')
+        # --- RÓTULOS (LABELS) ---
+        # Labels dos Projetos (Fonte maior)
+        nx.draw_networkx_labels(G, pos, labels={p: p for p in lista_projetos}, font_size=9, font_weight='bold')
+        
+        # Labels dos Alunos (NOVO: Fonte menor para caber todo mundo)
+        nx.draw_networkx_labels(G, pos, labels={a: a for a in lista_alunos}, font_size=6)
         
         # 2. Desenha Arestas (Emparelhamentos Estáveis) - COR VERDE
         conexoes = snap['conexoes_final']
         edges_verdes = list(conexoes.keys())
         
-        # Remove a aresta atual da lista de verdes para desenhá-la com destaque depois (se ela foi aceita)
+        # Remove a aresta atual da lista de verdes para desenhá-la com destaque
         aresta_atual = (snap['aluno'], snap['projeto'])
         if aresta_atual in edges_verdes and snap['resultado'] == 'aceito':
             edges_verdes.remove(aresta_atual)
@@ -206,7 +210,7 @@ def gerar_visualizacoes(projetos, alunos, snapshots):
             # Proposta Rejeitada (Vermelho tracejado)
             nx.draw_networkx_edges(G, pos, edgelist=[aresta_atual], edge_color='red', width=3, style='dashed')
 
-        # Legenda Personalizada
+        # Legenda
         from matplotlib.lines import Line2D
         legend_elements = [
             Line2D([0], [0], color='green', lw=2, label='Emparelhado (Estável)'),
@@ -223,7 +227,7 @@ def gerar_visualizacoes(projetos, alunos, snapshots):
 
     print("Snapshots radiais salvos na pasta 'graficos'.")
     
-    # --- 2. Matriz de Satisfação e Tabela Final ---
+    # --- 2. Matriz de Satisfação e Tabela Final (Continua igual) ---
     dados_finais = []
     rank_satisfacao = {'1ª Opção': 0, '2ª Opção': 0, '3ª Opção': 0, 'Não Alocado': 0}
 
