@@ -32,3 +32,15 @@ O software gera:
 * NetworkX (Grafos)
 * Matplotlib (Visualização)
 * Pandas (Manipulação de dados)
+
+## 🚀 Como Executar este Projeto
+
+Siga os passos abaixo para rodar a simulação e gerar os gráficos.
+
+### 1. Pré-requisitos
+Certifique-se de ter o **Python 3** instalado. Em seguida, instale as bibliotecas necessárias executando o comando abaixo no terminal:
+
+```bash
+pip install pandas networkx matplotlib numpy openpyxl
+
+python main.py
