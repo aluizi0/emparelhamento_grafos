@@ -157,55 +157,40 @@ def executar_gale_shapley(projetos, alunos):
 
     return snapshots
 
-# --- Verificação de Estabilidade ---
+# --- Verificação de Estabilidade (Corrigida) ---
 def verificar_estabilidade(projetos, alunos):
-    """
-    Verifica se o emparelhamento é estável (Gale-Shapley).
-    Um emparelhamento é instável se existe um aluno-projeto que:
-    1. O aluno prefere o projeto mais que seu projeto atual (ou não está alocado)
-    2. O projeto prefere o aluno mais que algum aluno atualmente alocado (ou tem vaga livre)
-    """
     blocking_pairs = []
     
     for aluno in alunos.values():
-        # Para cada projeto na lista de preferências original
-        for idx, pref_proj_code in enumerate(aluno.preferencias_originais):
+        # Usamos as preferências FILTRADAS, pois o aluno só pode bloquear
+        # com projetos para os quais ele foi considerado elegível.
+        prefs_lista = getattr(aluno, 'preferencias_filtradas', [])
+
+        for pref_proj_code in prefs_lista:
             proj = projetos.get(pref_proj_code)
-            if not proj:
+            if not proj: continue
+
+            # REGRA DE OURO: Se o aluno não tem nota, ignora (não é bloqueio)
+            if aluno.nota < proj.nota_minima:
                 continue
             
-            # Se aluno não está alocado e projeto tem vaga ou alunos piores
-            if not aluno.projeto_alocado:
-                # Aluno prefere este projeto (está na lista) e não tem alocação
-                if len(proj.alunos_alocados) < proj.vagas:
-                    # Há vaga livre
-                    blocking_pairs.append((aluno.codigo, pref_proj_code))
-                    break
-                else:
-                    # Projeto cheio, verifica se aluno é melhor que o pior
-                    pior = min(proj.alunos_alocados, key=lambda x: x.nota)
-                    if aluno.nota > pior.nota:
-                        blocking_pairs.append((aluno.codigo, pref_proj_code))
-                        break
+            # Se chegamos no projeto atual do aluno, paramos de verificar (pois as próximas são piores)
+            if aluno.projeto_alocado and aluno.projeto_alocado.codigo == pref_proj_code:
+                break
+
+            # --- Verificação de Bloqueio ---
+            # 1. Projeto tem vaga livre?
+            if len(proj.alunos_alocados) < proj.vagas:
+                blocking_pairs.append((aluno.codigo, pref_proj_code))
+                # print(f"Bloqueio: {aluno.codigo} quer {pref_proj_code} (Vaga Livre)")
+            
+            # 2. Projeto está cheio, mas tem alguém pior que eu?
             else:
-                # Aluno está alocado
-                proj_atual = aluno.projeto_alocado
-                if proj_atual.codigo == pref_proj_code:
-                    # Chegou ao projeto atual, para a busca
-                    break
-                
-                # Aluno prefere este projeto que seu atual
-                if len(proj.alunos_alocados) < proj.vagas:
-                    # Há vaga livre no projeto preferido
+                pior = min(proj.alunos_alocados, key=lambda x: x.nota)
+                if aluno.nota > pior.nota:
                     blocking_pairs.append((aluno.codigo, pref_proj_code))
-                    break
-                else:
-                    # Projeto cheio, verifica se aluno é melhor que pior alocado
-                    pior = min(proj.alunos_alocados, key=lambda x: x.nota)
-                    if aluno.nota > pior.nota:
-                        blocking_pairs.append((aluno.codigo, pref_proj_code))
-                        break
-    
+                    # print(f"Bloqueio: {aluno.codigo} (Nota {aluno.nota}) ganharia de {pior.codigo} (Nota {pior.nota}) em {pref_proj_code}")
+
     return len(blocking_pairs) == 0, blocking_pairs
 
 # --- Visualização Radial (Circular) ---
