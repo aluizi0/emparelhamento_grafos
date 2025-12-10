@@ -1,10 +1,23 @@
 import re
 import os
 import copy
-import matplotlib.pyplot as plt
-import networkx as nx
-import pandas as pd
-import numpy as np
+import sys
+
+# Configurações
+MAX_PREFERENCES = 3  # limite máximo de preferências por aluno conforme enunciado
+GANHO_THRESHOLD = 3  # considera 'Ganho' se aluno obteve uma das top N opções
+
+try:
+    import matplotlib.pyplot as plt
+    import networkx as nx
+    import pandas as pd
+    import numpy as np
+    import imageio.v2 as imageio
+except ModuleNotFoundError as e:
+    print(f"ERRO: Módulo não encontrado: {e.name}")
+    print("Instale as dependências executando (PowerShell):")
+    print("  python -m pip install -r requirements.txt")
+    sys.exit(1)
 
 # --- Estruturas de Dados ---
 class Projeto:
@@ -21,9 +34,17 @@ class Aluno:
     def __init__(self, codigo, preferencias_raw, nota):
         self.codigo = codigo
         # Limpa espaços e cria lista
-        self.preferencias = [p.strip() for p in preferencias_raw.split(',') if p.strip()]
-        # Guarda uma cópia das preferencias originais para calcular satisfação depois
-        self.preferencias_originais = list(self.preferencias) 
+        todas_prefs = [p.strip() for p in preferencias_raw.split(',') if p.strip()]
+
+        # Limita o número de preferências ao máximo permitido pelo projeto
+        if len(todas_prefs) > MAX_PREFERENCES:
+            print(f"Aviso: Aluno {codigo} indicou {len(todas_prefs)} preferências; truncando para {MAX_PREFERENCES}.")
+        self.preferencias = todas_prefs[:MAX_PREFERENCES]
+
+        # Guarda uma cópia das preferencias (após truncamento) para calcular satisfação depois
+        self.preferencias_originais = list(self.preferencias)
+        # Guarda também as preferências válidas após filtragem por requisitos (preenchido depois)
+        self.preferencias_filtradas = []
         self.nota = int(nota)
         self.projeto_alocado = None
 
@@ -60,7 +81,9 @@ def filtrar_preferencias(projetos, alunos):
                 validas.append(p_code)
             else:
                 remocoes += 1
-        aluno.preferencias = validas
+        # Salva preferências filtradas separadamente antes que a execução de Gale-Shapley as modifique
+        aluno.preferencias_filtradas = list(validas)
+        aluno.preferencias = list(validas)
     print(f"Filtragem: {remocoes} preferências removidas por requisitos não atendidos.")
 
 # --- Algoritmo Gale-Shapley ---
@@ -162,93 +185,179 @@ def gerar_visualizacoes(projetos, alunos, snapshots):
         angulo = (2 * np.pi * i) / len(lista_alunos)
         pos[a] = (raio_aluno * np.cos(angulo), raio_aluno * np.sin(angulo))
 
-    # --- Seleção de Snapshots ---
+    # --- Seleção de Snapshots (até 10) ---
     total_snaps = len(snapshots)
-    indices = np.linspace(0, total_snaps - 1, 10, dtype=int)
+    if total_snaps == 0:
+        print("Nenhum snapshot gerado; pulando visualizações.")
+    else:
+        n_images = min(10, total_snaps)
+        indices = np.linspace(0, total_snaps - 1, n_images, dtype=int)
+        indices = sorted(set(int(i) for i in indices))
 
-    for idx_img, idx_snap in enumerate(indices):
-        snap = snapshots[idx_snap]
+        for idx_img, idx_snap in enumerate(indices):
+            snap = snapshots[idx_snap]
         
-        # Aumentei um pouco a figura para caber os nomes
-        plt.figure(figsize=(18, 18)) 
-        
+        # Ajuste dinâmico de figura e tamanhos para reduzir sobreposição
+        n_alunos = max(1, len(lista_alunos))
+        n_projetos = max(1, len(lista_projetos))
+        figsize = (12, 12) if (n_alunos + n_projetos) < 200 else (18, 18)
+        plt.figure(figsize=figsize, dpi=150)
+
         # Título Informativo
         acao_txt = "ACEITO" if snap['resultado'] == 'aceito' else "REJEITADO"
         cor_titulo = 'green' if snap['resultado'] == 'aceito' else 'red'
         plt.suptitle(f"Iteração {snap['iteracao']}: {snap['aluno']} tenta {snap['projeto']} -> {acao_txt}", 
-                     fontsize=16, color=cor_titulo, fontweight='bold')
-        
-        # 1. Desenha Nós
-        # Alunos (Azul claro) - Aumentei um pouco o node_size para caber o texto
-        nx.draw_networkx_nodes(G, pos, nodelist=lista_alunos, node_size=150, node_color='#87CEFA', label='Alunos')
-        # Projetos (Verde claro)
-        nx.draw_networkx_nodes(G, pos, nodelist=lista_projetos, node_size=400, node_color='#90EE90', label='Projetos')
-        
-        # --- RÓTULOS (LABELS) ---
-        # Labels dos Projetos (Fonte maior)
-        nx.draw_networkx_labels(G, pos, labels={p: p for p in lista_projetos}, font_size=9, font_weight='bold')
-        
-        # Labels dos Alunos (NOVO: Fonte menor para caber todo mundo)
-        nx.draw_networkx_labels(G, pos, labels={a: a for a in lista_alunos}, font_size=6)
-        
+                     fontsize=14, color=cor_titulo, fontweight='bold')
+
+        # Node sizes e fontes adaptativas
+        aluno_node_size = int(max(30, 4000 / n_alunos))
+        proj_node_size = int(max(200, 6000 / n_projetos))
+        aluno_font = 6 if n_alunos > 60 else 8
+        proj_font = 9 if n_projetos < 50 else 8
+
+        # Cria posições levemente deslocadas para labels para reduzir sobreposição
+        label_pos = {}
+        for node, (x, y) in pos.items():
+            if node in lista_alunos:
+                # desloca labels um pouco para fora
+                label_pos[node] = (x * 1.06, y * 1.06)
+            else:
+                # desloca labels um pouco para dentro
+                label_pos[node] = (x * 0.92, y * 0.92)
+
+        # Desenha nós com cores distintas
+        nx.draw_networkx_nodes(G, pos, nodelist=lista_alunos, node_size=aluno_node_size, node_color='#6fa8dc', label='Alunos', alpha=0.9)
+        nx.draw_networkx_nodes(G, pos, nodelist=lista_projetos, node_size=proj_node_size, node_color='#93c47d', label='Projetos', alpha=0.95)
+
+        # Rótulos usando posições ajustadas
+        nx.draw_networkx_labels(G, label_pos, labels={p: p for p in lista_projetos}, font_size=proj_font, font_weight='bold')
+        nx.draw_networkx_labels(G, label_pos, labels={a: a for a in lista_alunos}, font_size=aluno_font)
+
         # 2. Desenha Arestas (Emparelhamentos Estáveis) - COR VERDE
         conexoes = snap['conexoes_final']
         edges_verdes = list(conexoes.keys())
-        
+
         # Remove a aresta atual da lista de verdes para desenhá-la com destaque
         aresta_atual = (snap['aluno'], snap['projeto'])
         if aresta_atual in edges_verdes and snap['resultado'] == 'aceito':
             edges_verdes.remove(aresta_atual)
-            
-        nx.draw_networkx_edges(G, pos, edgelist=edges_verdes, edge_color='green', alpha=0.3, width=1)
-        
-        # 3. Desenha Ação Atual
-        if snap['resultado'] == 'aceito':
-            # Proposta Aceita (Azul forte)
-            nx.draw_networkx_edges(G, pos, edgelist=[aresta_atual], edge_color='blue', width=3)
-        else:
-            # Proposta Rejeitada (Vermelho tracejado)
-            nx.draw_networkx_edges(G, pos, edgelist=[aresta_atual], edge_color='red', width=3, style='dashed')
 
-        # Legenda
+        # Desenha arestas estáveis com largura fina e baixa opacidade
+        if edges_verdes:
+            nx.draw_networkx_edges(G, pos, edgelist=edges_verdes, edge_color='#2e8b57', alpha=0.35, width=1)
+
+        # 3. Desenha Ação Atual com destaque
+        if snap['resultado'] == 'aceito':
+            nx.draw_networkx_edges(G, pos, edgelist=[aresta_atual], edge_color='#1f4e79', width=3)
+        else:
+            nx.draw_networkx_edges(G, pos, edgelist=[aresta_atual], edge_color='#b22222', width=3, style='dashed')
+
+        # Legenda melhorada
         from matplotlib.lines import Line2D
         legend_elements = [
-            Line2D([0], [0], color='green', lw=2, label='Emparelhado (Estável)'),
-            Line2D([0], [0], color='blue', lw=2, label='Proposta Aceita (Ativa)'),
-            Line2D([0], [0], color='red', lw=2, linestyle='--', label='Proposta Rejeitada'),
-            Line2D([0], [0], marker='o', color='w', markerfacecolor='#87CEFA', markersize=10, label='Alunos (Externo)'),
-            Line2D([0], [0], marker='o', color='w', markerfacecolor='#90EE90', markersize=10, label='Projetos (Interno)')
+            Line2D([0], [0], color='#2e8b57', lw=2, label='Emparelhado (Estável)'),
+            Line2D([0], [0], color='#1f4e79', lw=2, label='Proposta Aceita (Ativa)'),
+            Line2D([0], [0], color='#b22222', lw=2, linestyle='--', label='Proposta Rejeitada'),
+            Line2D([0], [0], marker='o', color='w', markerfacecolor='#6fa8dc', markersize=8, label='Alunos (Externo)'),
+            Line2D([0], [0], marker='o', color='w', markerfacecolor='#93c47d', markersize=10, label='Projetos (Interno)')
         ]
-        plt.legend(handles=legend_elements, loc='upper right')
-        
+        plt.legend(handles=legend_elements, loc='upper right', fontsize=9)
+
         plt.axis('off')
-        plt.savefig(f"graficos/snapshot_{idx_img+1}.png")
+        plt.tight_layout()
+        plt.savefig(f"graficos/snapshot_{idx_img+1}.png", dpi=150)
         plt.close()
 
     print("Snapshots radiais salvos na pasta 'graficos'.")
     
-    # --- 2. Matriz de Satisfação e Tabela Final (Continua igual) ---
+    # --- Gerar GIF a partir dos snapshots (se houver) ---
+    try:
+        snapshot_files = sorted([f for f in os.listdir('graficos') if f.startswith('snapshot_') and f.endswith('.png')],
+                                key=lambda x: int(x.split('_')[1].split('.')[0]))
+        if snapshot_files:
+            images = []
+            for fname in snapshot_files:
+                images.append(imageio.imread(os.path.join('graficos', fname)))
+            imageio.mimsave(os.path.join('graficos', 'emparelhamento_animacao.gif'), images, duration=0.8)
+            print("GIF de animação salvo em 'graficos/emparelhamento_animacao.gif'.")
+    except Exception as e:
+        print(f"Aviso: não foi possível gerar GIF de animação: {e}")
+
+    # --- Gerar Matriz de Emparelhamento (Proje x Aluno) ---
+    alunos_list = sorted(alunos.keys())
+    projetos_list = sorted(projetos.keys())
+    matriz = pd.DataFrame('', index=projetos_list, columns=alunos_list)
+    for a in alunos.values():
+        if a.projeto_alocado:
+            matriz.at[a.projeto_alocado.codigo, a.codigo] = 'Alocado'
+
+    matriz.to_excel('graficos/matriz_emparelhamento.xlsx')
+    print("Matriz de emparelhamento salva em 'graficos/matriz_emparelhamento.xlsx'.")
+
+    # --- 2. Matriz de Satisfação e Tabela Final (com Rank no Projeto) ---
+    # Primeiro, constrói ranking por projeto (lista de candidatos que tinham o projeto nas preferências filtradas)
+    ranking_projetos = {}
+    for p_code, proj in projetos.items():
+        candidatos = [a for a in alunos.values() if p_code in getattr(a, 'preferencias_filtradas', [])]
+        # Ordena por nota decrescente (maior nota = preferência maior do projeto)
+        candidatos.sort(key=lambda x: x.nota, reverse=True)
+        ranking_projetos[p_code] = [c.codigo for c in candidatos]
+
     dados_finais = []
     rank_satisfacao = {'1ª Opção': 0, '2ª Opção': 0, '3ª Opção': 0, 'Não Alocado': 0}
 
     for a in alunos.values():
         if a.projeto_alocado:
             proj = a.projeto_alocado
+            # Rank do projeto na lista do aluno (posição da escolha do aluno)
             try:
-                rank = a.preferencias_originais.index(proj.codigo) + 1
-                rank_str = f"{rank}ª"
-                if rank == 1: rank_satisfacao['1ª Opção'] += 1
-                elif rank == 2: rank_satisfacao['2ª Opção'] += 1
-                elif rank == 3: rank_satisfacao['3ª Opção'] += 1
+                rank_aluno_escolha = a.preferencias_originais.index(proj.codigo) + 1
+                rank_aluno_escolha_str = f"{rank_aluno_escolha}ª"
+                if rank_aluno_escolha == 1: rank_satisfacao['1ª Opção'] += 1
+                elif rank_aluno_escolha == 2: rank_satisfacao['2ª Opção'] += 1
+                elif rank_aluno_escolha == 3: rank_satisfacao['3ª Opção'] += 1
             except ValueError:
-                rank_str = "N/A"
-            
-            dados_finais.append([a.codigo, proj.codigo, a.nota, rank_str])
+                rank_aluno_escolha = None
+                rank_aluno_escolha_str = "N/A"
+
+            # Rank do aluno na lista do projeto
+            try:
+                lista_proj = ranking_projetos.get(proj.codigo, [])
+                rank_aluno_no_projeto = lista_proj.index(a.codigo) + 1
+                rank_aluno_no_projeto_str = f"{rank_aluno_no_projeto}ª"
+            except ValueError:
+                rank_aluno_no_projeto = None
+                rank_aluno_no_projeto_str = "N/A"
+
+            # Nova regra Ganho/Perda: comparar posições relativas normalizadas
+            # Calculamos scores normalizados entre 0 e 1 para aluno e projeto
+            def normalized_score(rank, total_list_length):
+                try:
+                    if total_list_length <= 1:
+                        return 1.0
+                    return 1.0 - ((rank - 1) / (total_list_length - 1))
+                except Exception:
+                    return None
+
+            # total possível para aluno = número de preferências originais (se >0)
+            total_aluno = len(a.preferencias_originais) if a.preferencias_originais else 1
+            total_proj = len(ranking_projetos.get(proj.codigo, [])) if ranking_projetos.get(proj.codigo) else 1
+
+            aluno_score = normalized_score(rank_aluno_escolha, total_aluno) if rank_aluno_escolha is not None else None
+            proj_score = normalized_score(rank_aluno_no_projeto, total_proj) if rank_aluno_no_projeto is not None else None
+
+            # Regra: se aluno_score >= proj_score => 'Ganho', caso contrário 'Perda'
+            if aluno_score is None or proj_score is None:
+                ganho_perda = 'N/A'
+            else:
+                ganho_perda = 'Ganho' if aluno_score >= proj_score else 'Perda'
+
+            dados_finais.append([a.codigo, proj.codigo, a.nota, rank_aluno_escolha_str, rank_aluno_no_projeto_str, ganho_perda])
         else:
-            dados_finais.append([a.codigo, "-", a.nota, "Não Alocado"])
+            dados_finais.append([a.codigo, "-", a.nota, "Não Alocado", "N/A", 'Perda'])
             rank_satisfacao['Não Alocado'] += 1
             
-    df_final = pd.DataFrame(dados_finais, columns=['Aluno', 'Projeto', 'Nota Aluno', 'Rank Escolha'])
+    df_final = pd.DataFrame(dados_finais, columns=['Aluno', 'Projeto', 'Nota Aluno', 'Rank Escolha', 'Rank no Projeto', 'Ganho/Perda'])
     df_final.to_excel("graficos/resultado_final.xlsx", index=False)
     
     # --- 3. Gráfico de Satisfação ---

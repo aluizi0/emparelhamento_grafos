@@ -1,0 +1,7 @@
+matplotlib
+networkx
+pandas
+numpy
+openpyxl
+imageio
+Pillow
