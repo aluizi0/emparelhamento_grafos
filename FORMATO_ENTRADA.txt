@@ -1,0 +1,77 @@
+FORMATO DO ARQUIVO DE ENTRADA (entradaProj2.txt)
+==================================================
+
+O arquivo de entrada deve conter a descrição dos projetos e preferências dos alunos.
+O formato segue o padrão descrito abaixo:
+
+1. DEFINIÇÃO DE PROJETOS
+------------------------
+Formato: (Código_Projeto, Número_de_Vagas, Nota_Mínima_Exigida)
+
+Exemplo:
+  (P1, 2, 5)
+  (P2, 1, 4)
+  (P3, 2, 3)
+
+- Código_Projeto: identificador alfanumérico começando com "P" (ex: P1, P2, ...)
+- Número_de_Vagas: inteiro positivo indicando quantas vagas o projeto tem
+- Nota_Mínima_Exigida: inteiro (0-10) indicando a nota mínima que o aluno precisa para se candidatar
+
+
+2. DEFINIÇÃO DE ALUNOS E PREFERÊNCIAS
+--------------------------------------
+Formato: (Código_Aluno):(Projeto_1, Projeto_2, Projeto_3, ...) (Nota_do_Aluno)
+
+Exemplo:
+  (A1):(P1, P3, P2) (8)
+  (A2):(P2, P1) (5)
+  (A3):(P3, P1, P2) (7)
+
+- Código_Aluno: identificador alfanumérico começando com "A" (ex: A1, A2, ...)
+- Projeto_i: preferências de projetos em ordem de preferência (máximo 3, conforme projeto)
+- Nota_do_Aluno: inteiro (0-10) indicando a nota individual do aluno
+
+
+3. REGRAS E LIMITAÇÕES
+-----------------------
+- Máximo de 3 preferências por aluno (excedentes são truncados automaticamente com aviso)
+- Projetos com nota mínima requerida: se nota_aluno < nota_mínima, a preferência é filtrada
+- Vagas: cada projeto pode ser alocado a múltiplos alunos até atingir o limite
+- Notas: usadas para desempate quando um projeto está cheio
+
+
+4. EXEMPLO COMPLETO
+-------------------
+
+// Projetos
+(P1, 2, 5)
+(P2, 1, 4)
+(P3, 2, 3)
+
+// Alunos
+(A1):(P1, P2, P3) (8)
+(A2):(P2, P1) (5)
+(A3):(P3, P1, P2) (7)
+(A4):(P1, P3) (4)
+
+Neste exemplo:
+- P1: 2 vagas, nota mínima 5
+- P2: 1 vaga, nota mínima 4
+- P3: 2 vagas, nota mínima 3
+
+A1 (nota 8): pode candidatar-se a P1, P2 e P3
+A2 (nota 5): pode candidatar-se a P2 e P1
+A3 (nota 7): pode candidatar-se a todos os projetos
+A4 (nota 4): pode candidatar-se a P1 (nota 4 < 5, então P1 é filtrada) e P3
+
+
+5. COMENTÁRIOS
+---------------
+Linhas começadas com "//" são comentários e serão ignoradas pelo programa.
+
+Exemplo:
+  // Projetos de Desenvolvimento
+  (P1, 2, 5)
+  
+  // Alunos interessados
+  (A1):(P1, P2) (7)

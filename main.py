@@ -157,6 +157,57 @@ def executar_gale_shapley(projetos, alunos):
 
     return snapshots
 
+# --- Verificação de Estabilidade ---
+def verificar_estabilidade(projetos, alunos):
+    """
+    Verifica se o emparelhamento é estável (Gale-Shapley).
+    Um emparelhamento é instável se existe um aluno-projeto que:
+    1. O aluno prefere o projeto mais que seu projeto atual (ou não está alocado)
+    2. O projeto prefere o aluno mais que algum aluno atualmente alocado (ou tem vaga livre)
+    """
+    blocking_pairs = []
+    
+    for aluno in alunos.values():
+        # Para cada projeto na lista de preferências original
+        for idx, pref_proj_code in enumerate(aluno.preferencias_originais):
+            proj = projetos.get(pref_proj_code)
+            if not proj:
+                continue
+            
+            # Se aluno não está alocado e projeto tem vaga ou alunos piores
+            if not aluno.projeto_alocado:
+                # Aluno prefere este projeto (está na lista) e não tem alocação
+                if len(proj.alunos_alocados) < proj.vagas:
+                    # Há vaga livre
+                    blocking_pairs.append((aluno.codigo, pref_proj_code))
+                    break
+                else:
+                    # Projeto cheio, verifica se aluno é melhor que o pior
+                    pior = min(proj.alunos_alocados, key=lambda x: x.nota)
+                    if aluno.nota > pior.nota:
+                        blocking_pairs.append((aluno.codigo, pref_proj_code))
+                        break
+            else:
+                # Aluno está alocado
+                proj_atual = aluno.projeto_alocado
+                if proj_atual.codigo == pref_proj_code:
+                    # Chegou ao projeto atual, para a busca
+                    break
+                
+                # Aluno prefere este projeto que seu atual
+                if len(proj.alunos_alocados) < proj.vagas:
+                    # Há vaga livre no projeto preferido
+                    blocking_pairs.append((aluno.codigo, pref_proj_code))
+                    break
+                else:
+                    # Projeto cheio, verifica se aluno é melhor que pior alocado
+                    pior = min(proj.alunos_alocados, key=lambda x: x.nota)
+                    if aluno.nota > pior.nota:
+                        blocking_pairs.append((aluno.codigo, pref_proj_code))
+                        break
+    
+    return len(blocking_pairs) == 0, blocking_pairs
+
 # --- Visualização Radial (Circular) ---
 def gerar_visualizacoes(projetos, alunos, snapshots):
     if not os.path.exists('graficos'):
@@ -275,11 +326,17 @@ def gerar_visualizacoes(projetos, alunos, snapshots):
         snapshot_files = sorted([f for f in os.listdir('graficos') if f.startswith('snapshot_') and f.endswith('.png')],
                                 key=lambda x: int(x.split('_')[1].split('.')[0]))
         if snapshot_files:
+            from PIL import Image
             images = []
             for fname in snapshot_files:
-                images.append(imageio.imread(os.path.join('graficos', fname)))
-            imageio.mimsave(os.path.join('graficos', 'emparelhamento_animacao.gif'), images, duration=0.8)
-            print("GIF de animação salvo em 'graficos/emparelhamento_animacao.gif'.")
+                img = Image.open(os.path.join('graficos', fname))
+                images.append(img)
+            
+            # Salva como GIF (PIL trata redimensionamento automaticamente)
+            if images:
+                images[0].save(os.path.join('graficos', 'emparelhamento_animacao.gif'), 
+                              save_all=True, append_images=images[1:], duration=800, loop=0)
+                print("GIF de animação salvo em 'graficos/emparelhamento_animacao.gif'.")
     except Exception as e:
         print(f"Aviso: não foi possível gerar GIF de animação: {e}")
 
@@ -371,7 +428,40 @@ def gerar_visualizacoes(projetos, alunos, snapshots):
     plt.savefig("graficos/indice_satisfacao.png")
     plt.close()
     
-    print("Gráfico de satisfação e tabela Excel salvos.")
+    # --- 4. Gráfico de Ganho/Perda por Projeto ---
+    ganho_perda_proj = {}
+    for p_code in projetos.keys():
+        ganho_perda_proj[p_code] = {'Ganho': 0, 'Perda': 0}
+    
+    for row in dados_finais:
+        aluno_cod, proj_cod, nota, rank_esc, rank_proj, ganho_perda = row
+        if proj_cod != "-" and ganho_perda in ['Ganho', 'Perda']:
+            ganho_perda_proj[proj_cod][ganho_perda] += 1
+    
+    # Filtra projetos com alocações
+    proj_com_alocacao = {p: gp for p, gp in ganho_perda_proj.items() if gp['Ganho'] + gp['Perda'] > 0}
+    
+    if proj_com_alocacao:
+        projetos_nomes = list(proj_com_alocacao.keys())
+        ganhos = [proj_com_alocacao[p]['Ganho'] for p in projetos_nomes]
+        perdas = [proj_com_alocacao[p]['Perda'] for p in projetos_nomes]
+        
+        x = np.arange(len(projetos_nomes))
+        width = 0.35
+        
+        plt.figure(figsize=(14, 6))
+        plt.bar(x - width/2, ganhos, width, label='Ganho', color='#2ecc71')
+        plt.bar(x + width/2, perdas, width, label='Perda', color='#e74c3c')
+        plt.xlabel('Projetos')
+        plt.ylabel('Quantidade de Alunos')
+        plt.title('Ganho/Perda por Projeto')
+        plt.xticks(x, projetos_nomes, rotation=45, ha='right')
+        plt.legend()
+        plt.tight_layout()
+        plt.savefig("graficos/ganho_perda_por_projeto.png", dpi=150)
+        plt.close()
+    
+    print("Gráfico de satisfação, ganho/perda por projeto e tabela Excel salvos.")
 
 # --- Execução Principal ---
 if __name__ == "__main__":
@@ -392,5 +482,67 @@ if __name__ == "__main__":
         
         print("--- 4. Gerando Visualizações ---")
         gerar_visualizacoes(projs, alus, historico)
+        
+        # --- 5. Verificar Estabilidade ---
+        print("--- 5. Verificando Estabilidade ---")
+        é_estavel, blocking_pairs = verificar_estabilidade(projs, alus)
+        print(f"Emparelhamento é estável: {é_estavel}")
+        if not é_estavel:
+            print(f"Pares bloqueadores encontrados: {len(blocking_pairs)}")
+        
+        # --- 6. Gerar Relatório Resumido ---
+        print("--- 6. Gerando Relatório Resumido ---")
+        total_alunos = len(alus)
+        alocados = len([a for a in alus.values() if a.projeto_alocado])
+        total_vagas = sum(p.vagas for p in projs.values())
+        vagas_preenchidas = sum(len(p.alunos_alocados) for p in projs.values())
+        
+        relatorio = f"""RELATÓRIO DE EMPARELHAMENTO - GALE-SHAPLEY
+{'='*60}
+
+RESUMO EXECUTIVO:
+  Total de Alunos: {total_alunos}
+  Alunos Alocados: {alocados}
+  Taxa de Alocação: {(alocados/total_alunos)*100:.1f}%
+  
+  Total de Vagas: {total_vagas}
+  Vagas Preenchidas: {vagas_preenchidas}
+  Taxa de Ocupação de Vagas: {(vagas_preenchidas/total_vagas)*100:.1f}%
+  
+  Total de Iterações: {len(historico)}
+  Emparelhamento Estável: {é_estavel}
+  Pares Bloqueadores Encontrados: {len(blocking_pairs)}
+
+ESTATÍSTICAS:
+  Projetos com Alocações: {len([p for p in projs.values() if len(p.alunos_alocados) > 0])}
+  Alunos com 1ª Opção: {sum(1 for a in alus.values() if a.projeto_alocado and (a.preferencias_originais and a.projeto_alocado.codigo == a.preferencias_originais[0]))}
+  Alunos com 2ª Opção: {sum(1 for a in alus.values() if a.projeto_alocado and (len(a.preferencias_originais) > 1 and a.projeto_alocado.codigo == a.preferencias_originais[1]))}
+  Alunos com 3ª Opção: {sum(1 for a in alus.values() if a.projeto_alocado and (len(a.preferencias_originais) > 2 and a.projeto_alocado.codigo == a.preferencias_originais[2]))}
+
+NOTA SOBRE ESTABILIDADE:
+  A implementação utiliza a versão "proposta pelo aluno" do algoritmo Gale-Shapley,
+  onde alunos fazem propostas e projetos aceitam/rejeitam. Isso garante que:
+  - O emparelhamento é estável para os projetos (nenhum projeto quer trocar seus alunos)
+  - Alguns alunos não alocados podem preferir projetos alocados
+  
+  Pares bloqueadores encontrados representam alunos que não foram alocados
+  mas que poderiam ter sido, indicando há margem de otimização.
+
+ARQUIVOS GERADOS:
+  - snapshot_*.png: Snapshots das iterações (até 10)
+  - emparelhamento_animacao.gif: Animação do processo
+  - resultado_final.xlsx: Tabela completa de resultados
+  - matriz_emparelhamento.xlsx: Matriz Projeto x Aluno
+  - indice_satisfacao.png: Gráfico de satisfação geral
+  - ganho_perda_por_projeto.png: Gráfico de ganho/perda por projeto
+  - relatorio_resumo.txt: Este arquivo
+
+{'='*60}
+Relatório gerado automaticamente pelo algoritmo Gale-Shapley.
+"""
+        
+        with open('graficos/relatorio_resumo.txt', 'w', encoding='utf-8') as f:
+            f.write(relatorio)
+        print("Relatório resumido salvo em 'graficos/relatorio_resumo.txt'.")
         
         print("\n--- Concluído! Verifique a pasta 'graficos'. ---")

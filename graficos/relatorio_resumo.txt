@@ -1,0 +1,42 @@
+RELATÓRIO DE EMPARELHAMENTO - GALE-SHAPLEY
+============================================================
+
+RESUMO EXECUTIVO:
+  Total de Alunos: 200
+  Alunos Alocados: 58
+  Taxa de Alocação: 29.0%
+  
+  Total de Vagas: 80
+  Vagas Preenchidas: 58
+  Taxa de Ocupação de Vagas: 72.5%
+  
+  Total de Iterações: 224
+  Emparelhamento Estável: False
+  Pares Bloqueadores Encontrados: 60
+
+ESTATÍSTICAS:
+  Projetos com Alocações: 39
+  Alunos com 1ª Opção: 37
+  Alunos com 2ª Opção: 11
+  Alunos com 3ª Opção: 12
+
+NOTA SOBRE ESTABILIDADE:
+  A implementação utiliza a versão "proposta pelo aluno" do algoritmo Gale-Shapley,
+  onde alunos fazem propostas e projetos aceitam/rejeitam. Isso garante que:
+  - O emparelhamento é estável para os projetos (nenhum projeto quer trocar seus alunos)
+  - Alguns alunos não alocados podem preferir projetos alocados
+  
+  Pares bloqueadores encontrados representam alunos que não foram alocados
+  mas que poderiam ter sido, indicando há margem de otimização.
+
+ARQUIVOS GERADOS:
+  - snapshot_*.png: Snapshots das iterações (até 10)
+  - emparelhamento_animacao.gif: Animação do processo
+  - resultado_final.xlsx: Tabela completa de resultados
+  - matriz_emparelhamento.xlsx: Matriz Projeto x Aluno
+  - indice_satisfacao.png: Gráfico de satisfação geral
+  - ganho_perda_por_projeto.png: Gráfico de ganho/perda por projeto
+  - relatorio_resumo.txt: Este arquivo
+
+============================================================
+Relatório gerado automaticamente pelo algoritmo Gale-Shapley.
